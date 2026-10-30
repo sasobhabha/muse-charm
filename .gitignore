@@ -44,6 +44,7 @@ Thumbs.db
 # Assistant & chat transcripts
 freebuff*
 .freebuff/
+conversation-export*
 scripts/scratch/
 
 # Tests & unnecessary test scripts
