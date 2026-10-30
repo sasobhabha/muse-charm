@@ -55,7 +55,7 @@ class DraftStore(context: Context, preferencesStore: DataStore<Preferences>? = n
         val read = prefs[readKey]?.split("|")?.filter(String::isNotBlank).orEmpty()
         prefs[readKey] = (read.filter { it != id } + id).takeLast(256).joinToString("|")
     } }
-    val speak = store.data.map { it[speaking] ?: false }
+    val speak = store.data.map { it[speaking] ?: true }
     suspend fun setInput(value: String) { store.edit { it[draft] = value } }
     suspend fun setVoice(value: String) { store.edit { it[voice] = value } }
     suspend fun setSpeak(value: Boolean) { store.edit { it[speaking] = value } }

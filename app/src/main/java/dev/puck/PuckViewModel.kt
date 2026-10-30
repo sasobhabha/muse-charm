@@ -38,7 +38,7 @@ class PuckViewModel(application: Application) : AndroidViewModel(application) {
     val connection = selected.flatMapLatest { it.connection }.stateIn(viewModelScope, SharingStarted.Eagerly, ConnectionStatus.Disconnected)
     val draft = MutableStateFlow("")
     val voiceReview = MutableStateFlow("")
-    val speakReplies = drafts.speak.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val speakReplies = drafts.speak.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val reply = MutableStateFlow("")
     val motion = drafts.motion.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val dismissedUpdates = drafts.dismissedUpdates.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())

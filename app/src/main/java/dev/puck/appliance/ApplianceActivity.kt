@@ -82,7 +82,7 @@ class ApplianceActivity:ComponentActivity() {
         super.onCreate(state);dev.puck.DebugScreen.apply(this);engine=ApplianceEngine.get(this)
         welcome=!engine.store.prefs.getBoolean("onboarding_done",false) && !dev.puck.MuseRuntime.get(this).vault.hasCredentials()
         speech=ApplianceSpeech(this);engine.onButtonPress=stopVoiceForButton;seenCameraGesture=engine.cameraGesture.value
-        lifecycleScope.launch {engine.spokenReplies.collect {if(engine.visible && engine.store.prefs.getBoolean("auto_read",false))speech.read(it)}}
+        lifecycleScope.launch {engine.spokenReplies.collect {if(engine.visible && engine.store.prefs.getBoolean("auto_read",true))speech.read(it)}}
         AppliancePolicy.companionEntry(this,engine.store.prefs.getBoolean("companion_entry",true))
         // Set window to pure OLED black and keep screen on for wearable appliance mode
         window.statusBarColor = android.graphics.Color.BLACK
@@ -158,15 +158,19 @@ class ApplianceActivity:ComponentActivity() {
                             Setup(raw,pairs,observing)
                         }
                     } else {
-                        val busy=status in ApplianceEngine.BUSY_STATES
-                        val interacting=status=="Listening" || busy || speaking
-                        val hasMessages=(notification!=null || update.isNotBlank()) && !interacting
-                        val hasActions=pendingCall!=null || pendingPhone!=null || (video!=null && !videoDismissed && !interacting) || photo!=null
-                        val hasOverlay=hasMessages || hasActions
+                        val showCaptions = remember(setup) { engine.store.prefs.getBoolean("show_captions", false) }
+                        val showNotifications = remember(setup) { engine.store.prefs.getBoolean("show_notifications", false) }
+                        val busy = status in ApplianceEngine.BUSY_STATES
+                        val interacting = status == "Listening" || busy || speaking
+                        val hasNotification = showNotifications && notification != null
+                        val hasUpdate = showCaptions && update.isNotBlank()
+                        val hasMessages = (hasNotification || hasUpdate) && !interacting
+                        val hasActions = pendingCall != null || pendingPhone != null || (video != null && !videoDismissed && !interacting) || photo != null
+                        val hasOverlay = hasMessages || hasActions
 
                         Box(Modifier.fillMaxSize()) {
                             // 1. Centerpiece: Fullscreen Avatar on pure OLED black
-                            Box(Modifier.fillMaxSize().padding(if(hasOverlay) 20.dp else 4.dp),contentAlignment=Alignment.Center) {
+                            Box(Modifier.fillMaxSize().padding(if(hasOverlay) 20.dp else 4.dp), contentAlignment = Alignment.Center) {
                                 val petScale = if(hasOverlay) 0.60f else 0.88f
                                 AvatarControl(
                                     modifier = Modifier.fillMaxSize(petScale).semantics {
@@ -179,9 +183,9 @@ class ApplianceActivity:ComponentActivity() {
                                     cancel = engine::cancelAvatarVoice
                                 ) {
                                     Pet(
-                                        status = if(speaking) "Speaking" else if(unread > 0 && !interacting) "New update" else status,
+                                        status = if(speaking) "Speaking" else if(showNotifications && unread > 0 && !interacting) "New update" else status,
                                         portrait = portrait,
-                                        mood = if(unread > 0) "cheerful" else mood,
+                                        mood = if(showNotifications && unread > 0) "cheerful" else mood,
                                         modifier = Modifier.fillMaxSize(),
                                         lookUp = hasOverlay
                                     )
@@ -206,11 +210,13 @@ class ApplianceActivity:ComponentActivity() {
                                 }
 
                                 if(status !in setOf("Resting", "Ready") && !speaking && !interacting) {
-                                    Text(
-                                        status,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = Color(0x66ffffff)
-                                    )
+                                    if(status != "Reply ready" || showCaptions) {
+                                        Text(
+                                            status,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color(0x66ffffff)
+                                        )
+                                    }
                                 }
 
                                 IconButton(
@@ -245,7 +251,7 @@ class ApplianceActivity:ComponentActivity() {
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     CompanionStatus(if(speaking) "Speaking" else status)
-                                    if(transcript.isNotBlank()) {
+                                    if(showCaptions && transcript.isNotBlank()) {
                                         Surface(
                                             shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
                                             color = Color(0xcc141414)
@@ -270,7 +276,7 @@ class ApplianceActivity:ComponentActivity() {
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    if(notifications.isNotEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
+                                    if(showNotifications && notifications.isNotEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
                                         Text((if(notifications.size>1)"${notificationIndex.coerceAtMost(notifications.lastIndex)+1}/${notifications.size}" else "1 alert")+(if(unread>0)" · $unread new" else ""),Modifier.weight(1f).clickable {engine.presentNotification()},style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
                                         if(notifications.size>1) {
                                             TextButton(enabled=notificationIndex>0,onClick={notificationIndex--;engine.presentNotification();notifications.getOrNull(notificationIndex)?.let {engine.notifications.read(it.id)}},modifier=Modifier.width(36.dp)){Text("‹",fontSize=20.sp)}
@@ -278,7 +284,7 @@ class ApplianceActivity:ComponentActivity() {
                                         }
                                         TextButton(onClick={speech.stop();engine.clearNotifications()}){Text("Clear",style=MaterialTheme.typography.labelSmall)}
                                     }
-                                    if(notification!=null && status!="Reply ready") {
+                                    if(showNotifications && notification!=null && status!="Reply ready") {
                                         key(notification.id,notification.posted) {
                                             val dismissState=rememberSwipeToDismissBoxState(confirmValueChange={value->if(value!=SwipeToDismissBoxValue.Settled){engine.dismissNotification(notification.id);true}else false})
                                             SwipeToDismissBox(dismissState,backgroundContent={}) {
@@ -288,7 +294,7 @@ class ApplianceActivity:ComponentActivity() {
                                             }
                                         }
                                     }
-                                    if(update.isNotBlank() && (notification==null || status=="Reply ready")) key(update) {
+                                    if(showCaptions && update.isNotBlank() && (notification==null || status=="Reply ready")) key(update) {
                                         val replyDismiss=rememberSwipeToDismissBoxState(confirmValueChange={value->if(value!=SwipeToDismissBoxValue.Settled){speech.stop();engine.dismiss();true}else false})
                                         SwipeToDismissBox(replyDismiss,backgroundContent={}) {
                                             MessageBubble(portrait.name,"",update,130.dp,
@@ -433,8 +439,12 @@ class ApplianceActivity:ComponentActivity() {
             val portraitStatus by engine.portraitStatus.collectAsState()
             Text(portraitStatus)
             Button(onClick=engine::syncPortrait) {Text("Link my Muse avatar")}
-            var autoRead by remember {mutableStateOf(engine.store.prefs.getBoolean("auto_read",false))}
-            Row(verticalAlignment=Alignment.CenterVertically) {Switch(autoRead,{autoRead=it;engine.store.prefs.edit().putBoolean("auto_read",it).apply()});Text("Read voice replies aloud")}
+            var autoRead by remember {mutableStateOf(engine.store.prefs.getBoolean("auto_read",true))}
+            Row(verticalAlignment=Alignment.CenterVertically) {Text("Speak voice replies aloud",Modifier.weight(1f));Switch(autoRead,{autoRead=it;engine.store.prefs.edit().putBoolean("auto_read",it).apply()})}
+            var showCaptions by remember {mutableStateOf(engine.store.prefs.getBoolean("show_captions",false))}
+            Row(verticalAlignment=Alignment.CenterVertically) {Text("Show captions & text replies",Modifier.weight(1f));Switch(showCaptions,{showCaptions=it;engine.store.prefs.edit().putBoolean("show_captions",it).apply()})}
+            var showNotifications by remember {mutableStateOf(engine.store.prefs.getBoolean("show_notifications",false))}
+            Row(verticalAlignment=Alignment.CenterVertically) {Text("Show notifications on Charm",Modifier.weight(1f));Switch(showNotifications,{showNotifications=it;engine.store.prefs.edit().putBoolean("show_notifications",it).apply()})}
             var accurateCaptions by remember {mutableStateOf(engine.store.prefs.getBoolean("accurate_captions",false))}
             if(LiveTranscript.enhancedAvailable(this@ApplianceActivity))Row(verticalAlignment=Alignment.CenterVertically) {Text("Enhanced English captions",Modifier.weight(1f));Switch(accurateCaptions,{accurateCaptions=it;engine.store.prefs.edit().putBoolean("accurate_captions",it).apply();lifecycleScope.launch(kotlinx.coroutines.Dispatchers.IO){runCatching {LiveTranscript.warm(this@ApplianceActivity)}}})}
             Text("Enhanced favors accuracy; turn it off for faster first words. Both stay on this phone and never delay sending audio.",style=MaterialTheme.typography.bodySmall)
