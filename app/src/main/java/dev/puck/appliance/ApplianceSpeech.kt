@@ -33,7 +33,8 @@ class ApplianceSpeech(context:Context) {
             if(status==TextToSpeech.SUCCESS) {
                 installed=tts?.voices?.filter {it.locale.language==Locale.getDefault().language && "notInstalled" !in it.features.orEmpty()}.orEmpty()
                 refreshVoices()
-                tts?.setSpeechRate(.95f)
+                tts?.setSpeechRate(0.84f)
+                tts?.setPitch(1.0f)
                 if(!ready.value)message.value="No usable installed voice; replies stay visible"
             } else message.value="Read-aloud voice unavailable; replies stay visible"
         }
@@ -64,14 +65,26 @@ class ApplianceSpeech(context:Context) {
         stop()
         if(tts?.setVoice(voice)==TextToSpeech.SUCCESS){selectedVoice.value=id;prefs.edit().putString("read_voice",id).apply();message.value=""}
     }
+    private fun naturalize(text:String):String {
+        var s=text.trim()
+        s=s.replace(Regex("```[\\s\\S]*?```")," ")
+        s=s.replace(Regex("\\[([^\\]]+)\\]\\([^)]+\\)"),"$1")
+        s=s.replace(Regex("[*_~#`]"),"")
+        s=s.replace(Regex("https?://\\S+"),"")
+        s=s.replace(Regex("([.!?])\\s*"),"$1 ")
+        return s.replace(Regex("\\s+")," ").trim()
+    }
     fun read(text:String) {
-        if(text.isBlank())return
+        val clean=naturalize(text)
+        if(clean.isBlank())return
         if(!ready.value){message.value="Read-back voice is not ready yet";return}
         if(audio.mode!=AudioManager.MODE_NORMAL){message.value="Read aloud is paused during a call";return}
         stop()
         if(audio.requestAudioFocus(focus)!=AudioManager.AUDIOFOCUS_REQUEST_GRANTED){message.value="Audio is busy; try Read aloud again";return}
         current=UUID.randomUUID().toString();message.value=""
-        if(tts?.speak(text.take(4000),TextToSpeech.QUEUE_FLUSH,null,current)!=TextToSpeech.SUCCESS){message.value="Could not start read aloud";stop()}
+        tts?.setSpeechRate(0.84f)
+        tts?.setPitch(1.0f)
+        if(tts?.speak(clean.take(4000),TextToSpeech.QUEUE_FLUSH,null,current)!=TextToSpeech.SUCCESS){message.value="Could not start read aloud";stop()}
     }
     fun stop(){current=null;tts?.stop();speaking.value=false;audio.abandonAudioFocusRequest(focus)}
     fun close(){stop();tts?.shutdown();tts=null}
