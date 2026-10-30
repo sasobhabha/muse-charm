@@ -1,0 +1,51 @@
+.gradle/
+.kotlin/
+**/build/
+local.properties
+*local*.properties
+*.jks
+*.keystore
+.env*
+credentials*
+*.token
+*.key
+*.pem
+*.p12
+*.pk8
+secrets*
+*.secret
+muse-crash.txt
+
+dist/
+.idea/
+*.iml
+.venv*/
+__pycache__/
+
+.debug-device-state/
+
+.puck-local/
+.pytest_cache/
+puck-source.zip
+app/src/main/assets/*.zip
+app/src/debug/assets/*.zip
+*.download
+
+# Logs & crash dumps
+*.log
+hs_err_pid*
+replay_pid*
+
+# OS clutter
+.DS_Store
+**/.DS_Store
+Thumbs.db
+
+# Assistant & chat transcripts
+freebuff*
+.freebuff/
+scripts/scratch/
+
+# Tests & unnecessary test scripts
+tests/
+
