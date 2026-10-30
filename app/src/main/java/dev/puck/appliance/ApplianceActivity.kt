@@ -84,7 +84,9 @@ class ApplianceActivity:ComponentActivity() {
         speech=ApplianceSpeech(this);engine.onButtonPress=stopVoiceForButton;seenCameraGesture=engine.cameraGesture.value
         lifecycleScope.launch {engine.spokenReplies.collect {if(engine.visible && engine.store.prefs.getBoolean("auto_read",false))speech.read(it)}}
         AppliancePolicy.companionEntry(this,engine.store.prefs.getBoolean("companion_entry",true))
-        // These Activity methods only exist from API 27; the window flags cover Android 8.0.
+        // Set window to pure OLED black and keep screen on for wearable appliance mode
+        window.statusBarColor = android.graphics.Color.BLACK
+        window.navigationBarColor = android.graphics.Color.BLACK
         if(android.os.Build.VERSION.SDK_INT>=27){setShowWhenLocked(true);setTurnScreenOn(true)}
         else window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
         val native=window.callback
@@ -138,112 +140,187 @@ class ApplianceActivity:ComponentActivity() {
             LaunchedEffect(pendingPhone) {
                 pendingPhone?.takeIf {it.autoOpen && engine.visible}?.let(::openPhoneAction)
             }
-            MaterialTheme(colorScheme=darkColorScheme(background=Color(0xff0a1116),surface=Color(0xff0a1116),primary=Color(0xffbde2c5))) {
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp).then(if(welcome || setup || camera || playingVideo)Modifier.verticalScroll(pageScroll,overscrollEffect=null) else Modifier),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                        if(welcome) {
+            MaterialTheme(colorScheme=darkColorScheme(background=Color.Black,surface=Color.Black,surfaceVariant=Color(0xff121212),primary=Color(0xffbde2c5),onBackground=Color.White,onSurface=Color.White)) {
+                Surface(Modifier.fillMaxSize(), color=Color.Black) {
+                    if(welcome) {
+                        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp).verticalScroll(pageScroll,overscrollEffect=null),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
                             CompanionWelcome(dev.puck.MuseRuntime.get(this@ApplianceActivity),::openSetupLink,::beginPairing,
                                 {permissions.launch(arrayOf(Manifest.permission.RECORD_AUDIO,Manifest.permission.CAMERA,Manifest.permission.POST_NOTIFICATIONS))},
                                 {val intent=Intent(android.provider.Settings.ACTION_HOME_SETTINGS);NavigationGuard.allow(this@ApplianceActivity,intent);startActivity(intent)},
                                 {engine.store.prefs.edit().putBoolean("onboarding_done",true).apply();welcome=false;if(dev.puck.MuseRuntime.get(this@ApplianceActivity).connection.value==dev.puck.core.ConnectionStatus.MuseConnected)engine.syncPortrait()})
-                        } else if(playingVideo && video!=null) {
-                            VideoPane(video!!){playingVideo=false}
-                        } else if(camera) {
-                            CameraPane({file->engine.photo.value=file;camera=false},{camera=false})
-                        } else if(setup) {
-                            Setup(raw,pairs,observing)
-                        } else {
-                            val busy=status in ApplianceEngine.BUSY_STATES
-                            val interacting=status=="Listening" || busy
-                            val idle=!interacting && notification==null && update.isBlank() && pendingCall==null && pendingPhone==null && photo==null && speechMessage.isBlank()
-                            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                            val docked=(notification!=null || update.isNotBlank()) && !interacting
-                            val petSize=if(docked)96.dp else if(idle)minOf(280.dp,maxWidth,(maxHeight-140.dp).coerceAtLeast(72.dp)) else if(interacting)72.dp else if(update.isNotBlank())120.dp else 180.dp
-                            Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                                Text(portrait.name,Modifier.weight(1f),style=MaterialTheme.typography.titleMedium)
-                                TextButton(onClick={engine.cancelAvatarVoice();speech.stop();showInfo=true},modifier=Modifier.semantics {contentDescription="Avatar controls info"}){Text("Info")}
-                                TextButton(onClick={engine.cancelAvatarVoice();speech.stop();setup=true}){Text("Settings")}
-                            }
-                            BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                            val spaceTop=if(docked)0.dp else if(idle)(maxHeight/2+petSize/2+8.dp).coerceAtMost((maxHeight-36.dp).coerceAtLeast(0.dp)) else petSize+12.dp
-                            Column(Modifier.fillMaxSize().padding(bottom=if(docked)112.dp else 0.dp).then(if(idle)Modifier else Modifier.verticalScroll(pageScroll,overscrollEffect=null)).padding(top=spaceTop),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                            if(!docked)CompanionStatus(if(speaking)"Speaking" else status)
-                            if(interacting) Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(captionState,style=MaterialTheme.typography.labelSmall)
-                                    Text(transcript.ifBlank {"…"},Modifier.fillMaxWidth().heightIn(min=140.dp,max=280.dp).verticalScroll(transcriptScroll),
-                                        fontSize=28.sp,lineHeight=36.sp,fontWeight=FontWeight.Medium)
-                                    if(!followTranscript)TextButton(onClick={followTranscript=true}) {Text("Follow live words")}
-                                }
-                            }
-                            if(notifications.isNotEmpty() && !interacting)Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                                Text((if(notifications.size>1)"${notificationIndex.coerceAtMost(notifications.lastIndex)+1} / ${notifications.size}" else "1 notification")+(if(unread>0)" · $unread new" else ""),Modifier.weight(1f).clickable {engine.presentNotification()},style=MaterialTheme.typography.labelLarge,color=MaterialTheme.colorScheme.primary)
-                                if(notifications.size>1) {
-                                    TextButton(enabled=notificationIndex>0,onClick={notificationIndex--;engine.presentNotification();notifications.getOrNull(notificationIndex)?.let {engine.notifications.read(it.id)}},modifier=Modifier.width(48.dp).semantics {contentDescription="Previous notification"}){Text("‹",fontSize=24.sp)}
-                                    TextButton(enabled=notificationIndex<notifications.lastIndex,onClick={notificationIndex++;engine.presentNotification();notifications.getOrNull(notificationIndex)?.let {engine.notifications.read(it.id)}},modifier=Modifier.width(48.dp).semantics {contentDescription="Next notification"}){Text("›",fontSize=24.sp)}
-                                }
-                                TextButton(onClick={speech.stop();engine.clearNotifications()}){Text("Clear all")}
-                            }
-                            if(notification!=null && !interacting && status!="Reply ready") {
-                                key(notification.id,notification.posted) {
-                                val dismissState=rememberSwipeToDismissBoxState(confirmValueChange={value->if(value!=SwipeToDismissBoxValue.Settled){engine.dismissNotification(notification.id);true}else false})
-                                SwipeToDismissBox(dismissState,backgroundContent={}) {
-                                    MessageBubble(notification.appName,notification.title,notification.text,if(notifications.size>1)100.dp else 140.dp,
-                                        {engine.notifications.read(notification.id);if(speaking)speech.stop() else speech.read(notification.display)},
-                                        {speech.stop();engine.dismissNotification(notification.id)},speaking)
-                                }}
-                            }
-                            if(update.isNotBlank() && !interacting && (notification==null || status=="Reply ready"))key(update) {
-                                val replyDismiss=rememberSwipeToDismissBoxState(confirmValueChange={value->if(value!=SwipeToDismissBoxValue.Settled){speech.stop();engine.dismiss();true}else false})
-                                SwipeToDismissBox(replyDismiss,backgroundContent={}) {
-                                    MessageBubble(portrait.name,"",update,200.dp,
-                                        {if(speaking)speech.stop() else speech.read(update)},{speech.stop();engine.dismiss()},speaking)
-                                }
-                            }
-                            pendingCall?.let {call -> Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(call.name?:"Google Voice call",style=MaterialTheme.typography.titleMedium)
-                                    Text(call.number?:"Choose the person to call")
-                                    if(call.number!=null)Button(onClick={openGoogleVoiceCall(call)}) {Text("Open Google Voice")}
-                                    TextButton(onClick={chooseCallContact(call)}) {Text(if(call.number==null)"Choose contact" else "Change contact")}
-                                    TextButton(onClick={engine.cancelCall();engine.callNotice("Call cancelled; nothing was placed.")}) {Text("Cancel call")}
-                                }
-                            } }
-                            pendingPhone?.let {phone -> Card(Modifier.fillMaxWidth()) {
-                                Column(Modifier.padding(12.dp)) {
-                                    Text(phone.request.action.summary())
-                                    val needsContact=dev.puck.core.CommandValidator.needsContact(phone.request.action)
-                                    if(needsContact)Button(onClick={choosePhoneContact(phone)}) {Text("Choose contact")}
-                                    else Button(onClick={openPhoneAction(phone)}) {Text(if(phone.request.action is dev.puck.core.DeviceAction.Message)"Open Google Voice draft" else "Open")}
-                                    TextButton(onClick={engine.cancelPhone();engine.callNotice("Cancelled before opening.")}) {Text("Cancel")}
-                                }
-                            } }
-                            if(pendingVideo!=null)Text("Video attached to your next question")
-                            if(video!=null && !videoDismissed && !interacting)Column(horizontalAlignment=Alignment.CenterHorizontally) {
-                                Button(onClick={speech.stop();engine.sendVideo()}){Text("Send video to Muse")}
-                                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center) {
-                                TextButton(onClick={speech.stop();playingVideo=true}){Text("Play last video")}
-                                TextButton(onClick={videoPlayer?.stopPlayback();playingVideo=false;engine.dismissVideo()}){Text("Dismiss video")}
-                                }
-                            }
-                            if(photo!=null) {Text("Photo attached to your next question");TextButton(onClick={photo?.delete();engine.photo.value=null}) {Text("Remove photo")}}
-                            }
-                            AvatarControl(Modifier.align(if(docked)androidx.compose.ui.AbsoluteAlignment.BottomLeft else if(idle)Alignment.Center else Alignment.TopCenter).size(petSize)
-                                .semantics {stateDescription=if(docked)"Looking up at messages" else "Ready for input"},
-                                toggle={if(engine.avatarRecording)engine.endAvatarVoice() else startAvatarVoice()},start=::startAvatarVoice,end=engine::endAvatarVoice,
-                                camera={engine.cancelAvatarVoice();engine.cameraGesture.value++},cancel=engine::cancelAvatarVoice) {
-                                Pet(if(speaking)"Speaking" else if(unread>0 && !interacting)"New update" else status,portrait,if(unread>0)"cheerful" else mood,Modifier.fillMaxSize(),lookUp=docked)
-                            }
-                            }
-                            }
-                            }
-                            if(showInfo)AlertDialog(onDismissRequest={showInfo=false},title={Text("Avatar controls")},text={Text("Tap once to record, then tap again to send.\n\nHold to record and release to send. Drag away to cancel.\n\nDouble tap opens the camera.\n\nSettings includes status updates, pairing and Developer mode.")},confirmButton={TextButton(onClick={showInfo=false}){Text("Got it")}})
-                            if(!interacting)OutlinedButton(onClick={
-                                if(checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED)camera=true
-                                else permissions.launch(arrayOf(Manifest.permission.CAMERA))
-                            },Modifier.fillMaxWidth().heightIn(min=56.dp)) {Text("Photo")}
                         }
+                    } else if(playingVideo && video!=null) {
+                        VideoPane(video!!){playingVideo=false}
+                    } else if(camera) {
+                        CameraPane({file->engine.photo.value=file;camera=false},{camera=false})
+                    } else if(setup) {
+                        Column(Modifier.fillMaxSize().safeDrawingPadding().padding(16.dp).verticalScroll(pageScroll,overscrollEffect=null),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(12.dp)) {
+                            Setup(raw,pairs,observing)
+                        }
+                    } else {
+                        val busy=status in ApplianceEngine.BUSY_STATES
+                        val interacting=status=="Listening" || busy || speaking
+                        val hasMessages=(notification!=null || update.isNotBlank()) && !interacting
+                        val hasActions=pendingCall!=null || pendingPhone!=null || (video!=null && !videoDismissed && !interacting) || photo!=null
+                        val hasOverlay=hasMessages || hasActions
+
+                        Box(Modifier.fillMaxSize()) {
+                            // 1. Centerpiece: Fullscreen Avatar on pure OLED black
+                            Box(Modifier.fillMaxSize().padding(if(hasOverlay) 20.dp else 4.dp),contentAlignment=Alignment.Center) {
+                                val petScale = if(hasOverlay) 0.60f else 0.88f
+                                AvatarControl(
+                                    modifier = Modifier.fillMaxSize(petScale).semantics {
+                                        stateDescription = if(hasOverlay) "Looking up at messages" else "Ready for input"
+                                    },
+                                    toggle = { if(engine.avatarRecording) engine.endAvatarVoice() else startAvatarVoice() },
+                                    start = ::startAvatarVoice,
+                                    end = engine::endAvatarVoice,
+                                    camera = { engine.cancelAvatarVoice(); engine.cameraGesture.value++ },
+                                    cancel = engine::cancelAvatarVoice
+                                ) {
+                                    Pet(
+                                        status = if(speaking) "Speaking" else if(unread > 0 && !interacting) "New update" else status,
+                                        portrait = portrait,
+                                        mood = if(unread > 0) "cheerful" else mood,
+                                        modifier = Modifier.fillMaxSize(),
+                                        lookUp = hasOverlay
+                                    )
+                                }
+                            }
+
+                            // 2. Minimal Subtle Corner Controls (Gear & Info, 28% alpha, never distracting)
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).align(Alignment.TopCenter),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                IconButton(
+                                    onClick = { engine.cancelAvatarVoice(); speech.stop(); showInfo = true },
+                                    modifier = Modifier.size(28.dp).graphicsLayer { alpha = 0.28f }
+                                ) {
+                                    Canvas(Modifier.size(16.dp)) {
+                                        drawCircle(Color.White, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f))
+                                        drawCircle(Color.White, radius = 1.5f, center = Offset(size.width/2, size.height*0.30f))
+                                        drawLine(Color.White, Offset(size.width/2, size.height*0.46f), Offset(size.width/2, size.height*0.75f), strokeWidth = 1.5f)
+                                    }
+                                }
+
+                                if(status !in setOf("Resting", "Ready") && !speaking && !interacting) {
+                                    Text(
+                                        status,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0x66ffffff)
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = { engine.cancelAvatarVoice(); speech.stop(); setup = true },
+                                    modifier = Modifier.size(28.dp).graphicsLayer { alpha = 0.28f }
+                                ) {
+                                    Canvas(Modifier.size(16.dp)) {
+                                        val center = Offset(size.width/2, size.height/2)
+                                        drawCircle(Color.White, radius = size.minDimension * 0.22f, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f))
+                                        for(angle in 0 until 360 step 60) {
+                                            val rad = Math.toRadians(angle.toDouble())
+                                            val cos = Math.cos(rad).toFloat()
+                                            val sin = Math.sin(rad).toFloat()
+                                            val r1 = size.minDimension * 0.28f
+                                            val r2 = size.minDimension * 0.46f
+                                            drawLine(
+                                                Color.White,
+                                                Offset(center.x + cos*r1, center.y + sin*r1),
+                                                Offset(center.x + cos*r2, center.y + sin*r2),
+                                                strokeWidth = 2f
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 3. Floating Voice & Transcription Overlay (when talking/listening)
+                            if(interacting) {
+                                Column(
+                                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    CompanionStatus(if(speaking) "Speaking" else status)
+                                    if(transcript.isNotBlank()) {
+                                        Surface(
+                                            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                                            color = Color(0xcc141414)
+                                        ) {
+                                            Text(
+                                                transcript.takeLast(100),
+                                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                                fontSize = 15.sp,
+                                                lineHeight = 19.sp,
+                                                fontWeight = FontWeight.Medium,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // 4. Floating Notification / Update Cards (dismissible)
+                            if(hasOverlay && !interacting) {
+                                Column(
+                                    Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = 34.dp, start = 8.dp, end = 8.dp).verticalScroll(pageScroll, overscrollEffect=null),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    if(notifications.isNotEmpty()) Row(Modifier.fillMaxWidth(), verticalAlignment=Alignment.CenterVertically) {
+                                        Text((if(notifications.size>1)"${notificationIndex.coerceAtMost(notifications.lastIndex)+1}/${notifications.size}" else "1 alert")+(if(unread>0)" · $unread new" else ""),Modifier.weight(1f).clickable {engine.presentNotification()},style=MaterialTheme.typography.labelSmall,color=MaterialTheme.colorScheme.primary)
+                                        if(notifications.size>1) {
+                                            TextButton(enabled=notificationIndex>0,onClick={notificationIndex--;engine.presentNotification();notifications.getOrNull(notificationIndex)?.let {engine.notifications.read(it.id)}},modifier=Modifier.width(36.dp)){Text("‹",fontSize=20.sp)}
+                                            TextButton(enabled=notificationIndex<notifications.lastIndex,onClick={notificationIndex++;engine.presentNotification();notifications.getOrNull(notificationIndex)?.let {engine.notifications.read(it.id)}},modifier=Modifier.width(36.dp)){Text("›",fontSize=20.sp)}
+                                        }
+                                        TextButton(onClick={speech.stop();engine.clearNotifications()}){Text("Clear",style=MaterialTheme.typography.labelSmall)}
+                                    }
+                                    if(notification!=null && status!="Reply ready") {
+                                        key(notification.id,notification.posted) {
+                                            val dismissState=rememberSwipeToDismissBoxState(confirmValueChange={value->if(value!=SwipeToDismissBoxValue.Settled){engine.dismissNotification(notification.id);true}else false})
+                                            SwipeToDismissBox(dismissState,backgroundContent={}) {
+                                                MessageBubble(notification.appName,notification.title,notification.text,110.dp,
+                                                    {engine.notifications.read(notification.id);if(speaking)speech.stop() else speech.read(notification.display)},
+                                                    {speech.stop();engine.dismissNotification(notification.id)},speaking)
+                                            }
+                                        }
+                                    }
+                                    if(update.isNotBlank() && (notification==null || status=="Reply ready")) key(update) {
+                                        val replyDismiss=rememberSwipeToDismissBoxState(confirmValueChange={value->if(value!=SwipeToDismissBoxValue.Settled){speech.stop();engine.dismiss();true}else false})
+                                        SwipeToDismissBox(replyDismiss,backgroundContent={}) {
+                                            MessageBubble(portrait.name,"",update,130.dp,
+                                                {if(speaking)speech.stop() else speech.read(update)},{speech.stop();engine.dismiss()},speaking)
+                                        }
+                                    }
+                                    pendingCall?.let {call -> Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color(0xdd1e1e1e))) {
+                                        Column(Modifier.padding(10.dp)) {
+                                            Text(call.name?:"Call",style=MaterialTheme.typography.titleSmall)
+                                            if(call.number!=null) Button(onClick={openGoogleVoiceCall(call)}) {Text("Call now")}
+                                            TextButton(onClick={engine.cancelCall()}) {Text("Cancel")}
+                                        }
+                                    }}
+                                    pendingPhone?.let {phone -> Card(Modifier.fillMaxWidth(), colors=CardDefaults.cardColors(containerColor=Color(0xdd1e1e1e))) {
+                                        Column(Modifier.padding(10.dp)) {
+                                            Text(phone.request.action.summary(),style=MaterialTheme.typography.titleSmall)
+                                            Button(onClick={openPhoneAction(phone)}) {Text("Open")}
+                                            TextButton(onClick={engine.cancelPhone()}) {Text("Cancel")}
+                                        }
+                                    }}
+                                    if(video!=null && !videoDismissed) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center) {
+                                        Button(onClick={speech.stop();engine.sendVideo()}){Text("Send video")}
+                                        TextButton(onClick={videoPlayer?.stopPlayback();playingVideo=false;engine.dismissVideo()}){Text("Dismiss")}
+                                    }
+                                    if(photo!=null) Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.Center,verticalAlignment=Alignment.CenterVertically) {
+                                        Text("Photo ready",style=MaterialTheme.typography.labelSmall)
+                                        TextButton(onClick={photo?.delete();engine.photo.value=null}){Text("Remove")}
+                                    }
+                                }
+                            }
+                        }
+                        if(showInfo)AlertDialog(onDismissRequest={showInfo=false},title={Text("Avatar controls")},text={Text("Tap once to record, then tap again to send.\n\nHold to record and release to send. Drag away to cancel.\n\nDouble tap anywhere to open camera.\n\nTap top-right gear for Settings & Pairing.")},confirmButton={TextButton(onClick={showInfo=false}){Text("Got it")}})
                     }
                 }
             }
@@ -644,8 +721,25 @@ class ApplianceActivity:ComponentActivity() {
     if(portraitBitmap!=null) {
         val tilt by androidx.compose.animation.core.animateFloatAsState(if(animate && status in ApplianceEngine.BUSY_STATES)if(raised)3f else -3f else 0f,label="Muse thought")
         Box(modifier,contentAlignment=Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()){drawCircle(if(mood=="concerned")Color(0xffffc28d) else if(status=="Listening")Color(0xffbde2c5) else Color(0xffabcde8),size.minDimension*.46f,alpha=if(raised).12f else .07f)}
-            Image(portraitBitmap,contentDescription=portrait.name+" Muse avatar",modifier=Modifier.fillMaxSize(.90f).graphicsLayer {translationY=bob;rotationZ=if(lookUp)7f else tilt;rotationX=if(lookUp)15f else 0f;scaleX=if(status=="Speaking" && raised)1.035f else 1f;scaleY=scaleX},contentScale=ContentScale.Fit)
+            if(status in setOf("Listening","Speaking") || mood=="concerned") {
+                Canvas(Modifier.fillMaxSize()){drawCircle(if(mood=="concerned")Color(0xffffc28d) else if(status=="Listening")Color(0xffbde2c5) else Color(0xffabcde8),size.minDimension*.46f,alpha=if(raised).14f else .06f)}
+            }
+            Image(portraitBitmap,contentDescription=portrait.name+" Muse avatar",modifier=Modifier.fillMaxSize().graphicsLayer {translationY=bob;rotationZ=if(lookUp)7f else tilt;rotationX=if(lookUp)15f else 0f;scaleX=if(status=="Speaking" && raised)1.035f else 1f;scaleY=scaleX},contentScale=ContentScale.Fit)
+        }
+        return
+    }
+    val defaultBitmap=remember {
+        runCatching {
+            android.graphics.BitmapFactory.decodeResource(context.resources, dev.puck.R.drawable.jolly_avatar)?.asImageBitmap()
+        }.getOrNull()
+    }
+    if(defaultBitmap!=null) {
+        val tilt by androidx.compose.animation.core.animateFloatAsState(if(animate && status in ApplianceEngine.BUSY_STATES)if(raised)3f else -3f else 0f,label="Muse thought")
+        Box(modifier,contentAlignment=Alignment.Center) {
+            if(status in setOf("Listening","Speaking") || mood=="concerned") {
+                Canvas(Modifier.fillMaxSize()){drawCircle(if(mood=="concerned")Color(0xffffc28d) else if(status=="Listening")Color(0xffbde2c5) else Color(0xffabcde8),size.minDimension*.46f,alpha=if(raised).14f else .06f)}
+            }
+            Image(defaultBitmap,contentDescription="Muse Charm avatar",modifier=Modifier.fillMaxSize().graphicsLayer {translationY=bob;rotationZ=if(lookUp)7f else tilt;rotationX=if(lookUp)15f else 0f;scaleX=if(status=="Speaking" && raised)1.035f else 1f;scaleY=scaleX},contentScale=ContentScale.Fit)
         }
         return
     }
