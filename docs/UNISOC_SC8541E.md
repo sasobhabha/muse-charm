@@ -38,12 +38,13 @@ Standard Android Settings are intentionally obscured by OEM watch skins. To acce
 3. Go back to **System** > **Developer options**.
 4. Enable **USB debugging**.
 5. Connect the watch via USB. On the RSA Authorization dialog, check **Always allow from this computer** and tap **OK**.
-6. **Critical:** On SC8541E watches, the power management daemon powers down the USB PHY transceiver when the display sleeps. Configure the system to keep USB and screen persistent:
+6. **Critical:** On SC8541E watches, the power management daemon powers down the USB PHY transceiver when the display sleeps. Configure the system to keep USB and screen persistent, and enable the built-in Pico TTS synthesizer for spoken voice replies:
    ```bash
    adb shell settings put global stay_on_while_plugged_in 7
    adb shell settings put system screen_off_timeout 600000
    adb shell settings put global development_settings_enabled 1
    adb shell settings put global adb_enabled 1
+   adb shell settings put secure tts_default_synth com.svox.pico
    ```
 
 ---
@@ -82,21 +83,29 @@ adb shell pm disable-user --user 0 com.sprd.engineermode
 
 ---
 
-## 6. Install Muse Launcher as Primary Default Home
+## 6. Install or Update Muse Charm as Primary Default Home
 
 1. Build or locate the 32-bit compatible APK:
    ```bash
    ./scripts/gradle-mac.sh assembleDebug
-   adb install -r app/build/outputs/apk/debug/app-debug.apk
    ```
-2. Lock Muse Launcher as default HOME:
+2. **Install or Update in-place:**
+   Always use `-r -g` to reinstall/update without uninstalling. Never run `adb uninstall dev.puck.launcher`, as that wipes saved pairing credentials, SDK tokens, and synced avatar files:
+   ```bash
+   adb install -r -g app/build/outputs/apk/debug/app-debug.apk
+   ```
+3. Lock Muse Charm as default HOME:
    ```bash
    adb shell cmd package set-home-activity --user 0 dev.puck.launcher/dev.puck.appliance.ApplianceActivity
    ```
-3. Verify default home activity:
+4. Verify default home activity:
    ```bash
    adb shell cmd package resolve-activity --brief -a android.intent.action.MAIN -c android.intent.category.HOME
    ```
+
+### 6.1 Spoken Voice Replies & Charm UI Settings
+- **Spoken Voice Replies:** Spoken replies are enabled by default through the watch speaker via Android Text-to-Speech (`com.svox.pico`).
+- **Edge-to-Edge Pure Black UI:** On-screen captions (subtitles) and notification alert cards are disabled by default on the Charm face so your character floats distraction-free in pure OLED black. They can be re-enabled at any time in **Settings** (tap subtle gear icon in top right).
 
 ---
 

@@ -27,19 +27,14 @@ Check out the [Unisoc SC8541E Setup & Provisioning Guide](docs/UNISOC_SC8541E.md
 
 ## What works
 
-- Tap the avatar once to record and again to send, or hold it and release to send.
-  Double tap opens the camera. A double tap does not start the microphone. Fast offline English captions
-  show words while recording. Muse receives the original audio.
-- Take a photo or hold the camera's video control to record. The attachment goes
-  with your next voice question, or send the video with its own audio. No
-  automatic description request is added.
-- One persistent Muse conversation, reply bubbles you can swipe away, and
-  optional Android read-aloud.
-- Optional notification access: local source-labeled bubbles, an unread count,
-  swipe dismissal and Clear all. An optional setting hides clearable Android
-  tray alerts after mirroring; calls, alarms and ongoing alerts stay visible.
-- Optional hardware-button calibration on phones that expose an extra key.
-  The firmware-bound physical test gate is preserved.
+- **Authentic Muse Charm Aesthetic:** The living avatar floats centered edge-to-edge against pure OLED black (`#000000`), borderless on circular and squircle watch screens.
+- **Spoken Voice by Default:** Spoken replies are read aloud by default using your device's Text-to-Speech synthesizer.
+- **Optional On-Screen Captions & Notifications:** Captions (subtitles) and notification alert cards stay hidden off the main Charm face by default, and can be easily toggled on in Settings (top-right subtle gear icon).
+- **Personal Avatar Priority:** Automatically syncs and displays your registered avatar directly from your paired Muse account, falling back cleanly to the official Jolly mascot.
+- **Wearable Gestures:** Tap or hold the avatar to record voice; release to send. Double-tap anywhere to open the camera. Muse receives the original audio directly.
+- **Photos & Videos:** Take a photo or hold the camera's video control to record. Attachments go with your next voice turn, or send video with its own audio.
+- **In-Place Updates:** Update anytime using `adb install -r -g` to keep all paired accounts, personal SDK tokens, and local assets completely intact.
+- **Optional Hardware Buttons:** Extra physical keys can be calibrated in Setup (e.g., Unihertz Jelly Star programmable key).
 
 ## Phones, Wearables, and the Hardware Button
 

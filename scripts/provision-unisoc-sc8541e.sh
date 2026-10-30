@@ -30,12 +30,13 @@ DEVICE_MODEL="$(adb shell getprop ro.product.model | tr -d '\r')"
 DEVICE_BUILD="$(adb shell getprop ro.build.display.id | tr -d '\r')"
 echo "[+] Model: ${DEVICE_MODEL} | Build: ${DEVICE_BUILD}"
 
-# 2. Configure USB keep-alive and screen timeout
-echo "[+] Setting persistent display and USB keep-alive..."
+# 2. Configure USB keep-alive, screen timeout, and Text-to-Speech
+echo "[+] Setting persistent display, USB keep-alive, and TTS default synth..."
 adb shell settings put global stay_on_while_plugged_in 7
 adb shell settings put system screen_off_timeout 600000
 adb shell settings put global development_settings_enabled 1
 adb shell settings put global adb_enabled 1
+adb shell settings put secure tts_default_synth com.svox.pico
 
 # 3. Disable Unisoc OEM kill watchdog
 echo "[+] Disabling OEM watchdog (com.sprd.engineermode)..."
