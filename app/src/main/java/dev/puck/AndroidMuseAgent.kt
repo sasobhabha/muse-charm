@@ -163,7 +163,10 @@ class MuseRuntime private constructor(private val context: Context) {
     }
     fun onRequestFailed(message: String) { setupStatus.value = message.take(200) }
     fun saveCredentials(value: String): Boolean = try { vault.save("credentials", value) } catch (_: Exception) { false }
-    fun clearCredentials() { vault.forgetCredentials() }
+    fun clearCredentials() {
+        // Pairing is permanent: never clear stored credentials automatically from background network events.
+        // User must explicitly choose "Forget connection" in Settings to clear.
+    }
     fun onPaired() {
         setupStatus.value = "Muse paired with Muse Launcher. Choose Use Muse to connect."
         stopPairing()

@@ -661,17 +661,15 @@ class Runtime:
                 root = api_root(credentials.get("api_url_v2"))
                 vms, status = await asyncio.to_thread(fetch_vms_with_status, credentials["access_token"], root)
                 if status == 401 or time.time() - credentials.get("saved_at", 0) > 3600:
-                    tokens, refresh_status = await asyncio.to_thread(refresh_device_token, credentials["refresh_token"], self.identity.device_id, root, credentials.get("sdk_token"))
-                    if refresh_status == 401:
-                        self.callbacks.clearCredentials()
-                        self.callbacks.onState("blocked", "Muse pairing was revoked. Pair again.")
-                        return
-                    if tokens:
-                        candidate = {**credentials, "access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "saved_at": time.time()}
-                        if not self.callbacks.saveCredentials(json.dumps(candidate)):
-                            raise ConnectionError("Credential persistence failed")
-                        credentials = candidate
-                        vms, status = await asyncio.to_thread(fetch_vms_with_status, credentials["access_token"], root)
+                    try:
+                        tokens, refresh_status = await asyncio.to_thread(refresh_device_token, credentials["refresh_token"], self.identity.device_id, root, credentials.get("sdk_token"))
+                        if tokens:
+                            candidate = {**credentials, "access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "saved_at": time.time()}
+                            if self.callbacks.saveCredentials(json.dumps(candidate)):
+                                credentials = candidate
+                                vms, status = await asyncio.to_thread(fetch_vms_with_status, credentials["access_token"], root)
+                    except Exception:
+                        pass
                 if not vms:
                     raise ConnectionError("Muse VM unavailable")
                 vm = next((v for v in vms if v["is_default"]), vms[0])
@@ -680,22 +678,19 @@ class Runtime:
                 outcome = await session.run(self.stop_event)
                 self.last_control_stats = dict(session.control_stats)
                 self.session = None
-                if outcome == Outcome.UNPAIRED:
-                    self.callbacks.clearCredentials()
-                    self.callbacks.onState("blocked", "Muse removed this device. Pair again.")
-                    return
                 if outcome == Outcome.STOPPED:
                     return
+                # On CLOSED or UNPAIRED, keep pairing permanent and reconnect automatically
             except Exception:
                 if self.session is not None:
                     self.last_control_stats = dict(self.session.control_stats)
                 self.session = None
-                self.callbacks.onState("blocked", "Muse connection unavailable. Drafts remain local; requests are not replayed.")
+                self.callbacks.onState("connecting", "Reconnecting to Muse…")
             if self.closed:
                 break
             failures += 1
             try:
-                await asyncio.wait_for(self.stop_event.wait(), min(60, 2 ** min(failures, 6)))
+                await asyncio.wait_for(self.stop_event.wait(), min(30, 2 ** min(failures, 5)))
                 return
             except asyncio.TimeoutError:
                 pass
