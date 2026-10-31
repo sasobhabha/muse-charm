@@ -37,6 +37,7 @@ class MusePairingService : Service() {
     @Volatile private var latch: CountDownLatch? = null
     @Volatile private var notificationOk = false
     @Volatile private var isAdvertising = false
+    @Volatile private var startingPairing = false
 
     private var txCharacteristic: BluetoothGattCharacteristic? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -196,20 +197,23 @@ class MusePairingService : Service() {
             stopPairing()
             return START_NOT_STICKY
         }
-        if (isAdvertising || server != null) {
-            Log.i(TAG, "Pairing is already running, ignoring duplicate start")
+        if (startingPairing || isAdvertising || server != null) {
+            Log.i(TAG, "Pairing is already starting or active, ignoring duplicate start")
             return START_NOT_STICKY
         }
+        startingPairing = true
         stopping = false
         val permitted = Build.VERSION.SDK_INT < 31 ||
             (checkSelfPermission(Manifest.permission.BLUETOOTH_ADVERTISE) == PackageManager.PERMISSION_GRANTED && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED)
         if (!permitted) {
+            startingPairing = false
             runtime.setupStatus.value = "Bluetooth permission is required for pairing"
             stopPairing()
             return START_NOT_STICKY
         }
         adapter = getSystemService(BluetoothManager::class.java).adapter
         if (adapter?.isEnabled != true || adapter?.isMultipleAdvertisementSupported != true) {
+            startingPairing = false
             runtime.setupStatus.value = "Enable Bluetooth; gadget advertising must be supported by this phone"
             stopPairing()
             return START_NOT_STICKY
@@ -220,9 +224,20 @@ class MusePairingService : Service() {
         return START_NOT_STICKY
     }
 
-    fun advertise() {
-        if (stopping) return
-        val bluetooth = adapter ?: return
+    @Synchronized fun advertise() {
+        if (stopping) {
+            startingPairing = false
+            return
+        }
+        if (server != null) {
+            Log.w(TAG, "GATT server already exists in advertise(), skipping duplicate")
+            startingPairing = false
+            return
+        }
+        val bluetooth = adapter ?: run {
+            startingPairing = false
+            return
+        }
 
         closeServer()
 
@@ -230,6 +245,7 @@ class MusePairingService : Service() {
         runtime.vault.rememberBluetoothName(bluetooth.name ?: "Jelly Star")
         if (!bluetooth.setName(runtime.vault.bleName)) {
             Log.e(TAG, "Could not set Bluetooth name to ${runtime.vault.bleName}")
+            startingPairing = false
             runtime.setupStatus.value = "Could not set the temporary pairing name"
             stopPairing()
             return
@@ -238,6 +254,7 @@ class MusePairingService : Service() {
         val gattServer = getSystemService(BluetoothManager::class.java).openGattServer(this, callback)
         if (gattServer == null) {
             Log.e(TAG, "openGattServer returned null")
+            startingPairing = false
             runtime.setupStatus.value = "GATT server could not start"
             stopPairing()
             return
@@ -268,13 +285,14 @@ class MusePairingService : Service() {
 
         if (!gattServer.addService(service)) {
             Log.e(TAG, "addService returned false")
+            startingPairing = false
             runtime.setupStatus.value = "GATT server could not start"
             stopPairing()
         }
     }
 
-    private fun beginAdvertising() {
-        if (stopping) return
+    @Synchronized private fun beginAdvertising() {
+        if (stopping || isAdvertising) return
         advertiser = adapter?.bluetoothLeAdvertiser
         val data = AdvertiseData.Builder().addServiceUuid(ParcelUuid(SERVICE)).addManufacturerData(0xffff, byteArrayOf(0)).build()
         val response = AdvertiseData.Builder().setIncludeDeviceName(true).build()
@@ -312,6 +330,7 @@ class MusePairingService : Service() {
     private fun closeServer() {
         try { advertiser?.stopAdvertising(advertisingCallback) } catch (_: Exception) {}
         isAdvertising = false
+        startingPairing = false
         disconnectPeer()
         peer = null
         subscribed = false

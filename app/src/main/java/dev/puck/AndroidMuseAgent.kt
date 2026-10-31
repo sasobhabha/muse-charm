@@ -88,21 +88,29 @@ class MuseRuntime private constructor(private val context: Context) {
             } catch (_: Exception) { setupStatus.value = "Could not save SDK token. Copy it again." }
         }
     }
+    @Volatile private var isActivatingPairing = false
     fun startPairing() {
-        if (pairingOpen.value) return
+        if (pairingOpen.value || isActivatingPairing) return
         try {
             check(vault.read("sdk") != null) { "SDK token required" }
             val intent = Intent(context, MusePairingService::class.java).setAction(MusePairingService.PAIR)
             context.startForegroundService(intent)
         } catch (_: Exception) { setupStatus.value = "Save an SDK token and grant Bluetooth access before pairing." }
     }
-    fun stopPairing() { bluetooth?.stopPairing() }
+    fun stopPairing() {
+        isActivatingPairing = false
+        bluetooth?.stopPairing()
+    }
     fun activatePairing() {
+        if (isActivatingPairing) return
+        isActivatingPairing = true
         scope.launch {
             try {
                 python.callAttr("start_pairing", vault.read("sdk") ?: error("SDK token required"))
                 bluetooth?.advertise()
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                android.util.Log.e("PuckMuse", "activatePairing failed", e)
+                isActivatingPairing = false
                 setupStatus.value = "Pairing could not start. Check SDK token and Bluetooth."
                 bluetooth?.stopPairing()
             }
@@ -113,6 +121,7 @@ class MuseRuntime private constructor(private val context: Context) {
     }
     fun peerDisconnected() { scope.launch { try { python.callAttr("peer_disconnected") } catch (_: Exception) {} } }
     fun pairingStopped() {
+        isActivatingPairing = false
         scope.launch { try { python.callAttr("stop_pairing") } catch (_: Exception) {} }
         pairingOpen.value = false
         if (setupStatus.value.startsWith("Pairing open:")) setupStatus.value = "Pairing window closed. Start again when ready."
