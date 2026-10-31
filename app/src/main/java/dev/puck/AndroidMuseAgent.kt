@@ -89,6 +89,7 @@ class MuseRuntime private constructor(private val context: Context) {
         }
     }
     fun startPairing() {
+        if (pairingOpen.value) return
         try {
             check(vault.read("sdk") != null) { "SDK token required" }
             val intent = Intent(context, MusePairingService::class.java).setAction(MusePairingService.PAIR)

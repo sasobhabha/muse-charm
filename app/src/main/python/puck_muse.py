@@ -15,7 +15,7 @@ import time
 import uuid
 from urllib.parse import urlparse
 
-logging.disable(logging.CRITICAL)
+logging.basicConfig(level=logging.INFO, format="[PuckMusePY] %(name)s: %(message)s")
 from musegadget.identity import Identity
 from musegadget.pairing import PairingSession
 from musegadget.ble_setup import SetupController, ProvisionFailed
