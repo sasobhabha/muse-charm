@@ -272,6 +272,7 @@ class LinkSession:
             decoded = json.loads(response) if response else None
         except json.JSONDecodeError:
             decoded = response.decode("utf-8", errors="replace")[:2000]
+        log.info("send_chat: status=%d, session_id=%s, response=%s", status, session_id, decoded)
         return {"ok": 200 <= status < 300, "status": status, "response": decoded}
 
     # -- Sending --------------------------------------------------------------

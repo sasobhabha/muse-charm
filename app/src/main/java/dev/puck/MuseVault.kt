@@ -24,8 +24,15 @@ class MuseVault(context: Context) {
     val bleName get() = "MuseGadget" + mac.replace(":", "").takeLast(6).uppercase()
     // Start one dedicated conversation, separate from obsolete prototype chat IDs.
     // Keep it across updates, reconnects and process restarts; never rotate per turn.
-    val chatId: String = prefs.getString("puck_side_chat_v1", null) ?: UUID.randomUUID().toString().also {
-        check(prefs.edit().putString("puck_side_chat_v1", it).commit())
+    var chatId: String
+        get() = prefs.getString("puck_side_chat_v1", null) ?: UUID.randomUUID().toString().also {
+            check(prefs.edit().putString("puck_side_chat_v1", it).commit())
+        }
+        set(value) {
+            prefs.edit().putString("puck_side_chat_v1", value).commit()
+        }
+    fun resetChatId() {
+        prefs.edit().remove("puck_side_chat_v1").commit()
     }
     var enabled: Boolean
         get() = prefs.getBoolean("enabled", false)
@@ -55,7 +62,7 @@ class MuseVault(context: Context) {
         return prefs.edit().putString(name, Base64.encodeToString(cipher.iv + cipher.doFinal(text.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)).commit()
     }
     @Synchronized fun forgetCredentials() = prefs.edit().remove("credentials").commit()
-    @Synchronized fun forgetSecrets() = prefs.edit().remove("credentials").remove("sdk").remove("enabled").commit()
+    @Synchronized fun forgetSecrets() = prefs.edit().remove("credentials").remove("sdk").remove("enabled").remove("puck_side_chat_v1").commit()
     fun hasSdkToken() = prefs.contains("sdk")
     fun hasCredentials() = prefs.contains("credentials")
     fun rememberBluetoothName(name: String) { prefs.edit().putString("original_bluetooth_name", name).commit() }

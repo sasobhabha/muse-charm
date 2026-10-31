@@ -171,7 +171,16 @@ class MuseRuntime private constructor(private val context: Context) {
         }
         setupStatus.value = message
     }
-    fun onRequestFailed(message: String) { setupStatus.value = message.take(200) }
+    fun onRequestFailed(message: String) {
+        android.util.Log.e("PuckMuse", "onRequestFailed: $message")
+        setupStatus.value = message.take(200)
+    }
+    fun onSessionUpdated(sessionId: String) {
+        if (sessionId.isNotBlank()) {
+            android.util.Log.i("PuckMuse", "onSessionUpdated: $sessionId")
+            vault.chatId = sessionId
+        }
+    }
     fun saveCredentials(value: String): Boolean = try { vault.save("credentials", value) } catch (_: Exception) { false }
     fun clearCredentials() {
         // Pairing is permanent: never clear stored credentials automatically from background network events.

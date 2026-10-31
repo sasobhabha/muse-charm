@@ -483,13 +483,34 @@ class AndroidSession(LinkSession):
             # request is acknowledged. The default subscription is main-chat only.
             ack = await self.send_chat(text, chat_id, attachments=attachments)
             timing["upload_ack_ms"] = round((time.monotonic() - started_at) * 1000)
-            if ack.get("ok") and progress:progress("thinking")
+            if not ack.get("ok") and chat_id:
+                logging.getLogger("puck_muse").warning(
+                    "turn: send_chat failed with chat_id=%s (status=%s, response=%s); falling back to main chat (session_id=None)",
+                    chat_id, ack.get("status"), ack.get("response")
+                )
+                chat_id = None
+                sub = Subscription(asyncio.get_running_loop(), None, reply_marker=reply_marker, progress=progress)
+                ack = await self.send_chat(text, None, attachments=attachments)
+
             response = ack.get("response")
+            if ack.get("ok"):
+                if progress: progress("thinking")
+                resp_payload = response.get("result", response.get("payload", response)) if isinstance(response, dict) else {}
+                allocated_session = (resp_payload.get("session_id") or response.get("session_id")) if isinstance(response, dict) else None
+                if allocated_session and hasattr(self.callbacks, "onSessionUpdated"):
+                    try:
+                        self.callbacks.onSessionUpdated(str(allocated_session))
+                    except Exception:
+                        pass
             self.reply_stats = {"chat_status": ack.get("status",0), "ack_object": isinstance(response,dict),
                 "ack_has_message": isinstance(response,dict) and isinstance(response.get("result",response.get("payload",response)),dict) and "message_id" in response.get("result",response.get("payload",response))}
             if not ack.get("ok"):
-                self.callbacks.onRequestFailed("Muse chat request refused (HTTP %d)" % ack.get("status", 0))
-                raise ConnectionError("chat request refused")
+                status_code = ack.get("status", 0)
+                resp_text = str(response)[:100] if response else "no details"
+                err_msg = f"Muse chat request refused (HTTP {status_code}: {resp_text})"
+                logging.getLogger("puck_muse").error("turn: %s", err_msg)
+                self.callbacks.onRequestFailed(err_msg[:120])
+                raise ConnectionError(err_msg)
             sub.acknowledge(ack.get("response"))
             encrypted = self._transport.encrypt_http_request("POST", "/chat/subscribe", json.dumps({"session_id": chat_id} if chat_id else {}).encode(), headers=[Header("Content-Type", "application/json")])
             self._requests[encrypted.stream_id] = sub
@@ -755,6 +776,7 @@ class Runtime:
             return json.dumps({"ok": True, "text": reply})
         except Exception as exc:
             future.cancel()
+            err_str = str(exc)
             safe_errors = {
                 "missing chat acknowledgment": "Muse returned no chat acknowledgment",
                 "uncorrelated chat acknowledgment": "Muse acknowledgment had no message ID",
@@ -762,13 +784,20 @@ class Runtime:
                 "subscription reset": "Muse reply subscription reset",
                 "invalid subscription event": "Muse reply event could not be parsed",
                 "subscription ended before reply": "Muse reply stream ended before a correlated reply",
-                "chat request refused": "Muse chat request was refused",
                 "subscription buffer exceeded": "Muse subscription frame exceeds buffer limit",
                 "subscription row exceeded": "Muse subscription event exceeds row limit",
                 "subscription pre-ack overflow": "Muse subscription history exceeds early event limit",
                 "too many assistant messages": "Muse reply exceeds message limit",
             }
-            message = safe_errors.get(str(exc), "Muse request failed (%s)" % type(exc).__name__)
+            matched = None
+            for key, val in safe_errors.items():
+                if key in err_str:
+                    matched = val
+                    break
+            if "chat request refused" in err_str:
+                message = err_str
+            else:
+                message = matched or ("Muse request failed (%s)" % type(exc).__name__)
             if not isinstance(exc, asyncio.TimeoutError):
                 self.callbacks.onRequestFailed(message)
             return json.dumps({"ok": False, "error": message})
