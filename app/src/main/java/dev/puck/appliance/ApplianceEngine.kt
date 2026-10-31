@@ -312,9 +312,18 @@ class ApplianceEngine private constructor(val context:Context) {
             val useMuse=usesMuse()
             var reply:JSONObject
             if(useMuse) {
+                val runtime=dev.puck.MuseRuntime.get(context)
+                if(runtime.connection.value!=dev.puck.core.ConnectionStatus.MuseConnected) {
+                    withContext(Dispatchers.Main){status.value="Connecting…"}
+                    runtime.connect()
+                    withTimeout(25000) {
+                        runtime.connection.first { it==dev.puck.core.ConnectionStatus.MuseConnected }
+                    }
+                    withContext(Dispatchers.Main){status.value="Sending"}
+                }
                 // A lost Muse outcome cannot be replayed automatically.
                 row.put("state","muse_pending");journal.writeText(row.toString())
-                reply=dev.puck.MuseRuntime.get(context).send(row.getString("id"),
+                reply=runtime.send(row.getString("id"),
                     if(data.has("audio"))"Handle the request in the attached speech, using the photo or video if present. Ask for another recording if unclear." else "User input is the attached video.",
                     "appliance",data.optString("image",""),data.optString("audio",""),data.optString("video",""))
                 check(reply.optBoolean("ok"))
@@ -345,7 +354,10 @@ class ApplianceEngine private constructor(val context:Context) {
             row.put("state","sent");journal.writeText(row.toString())
             if(!row.isNull("audio"))File(store.dir,row.getString("audio")).delete()
             if(!row.isNull("photo")) File(store.dir,row.getString("photo")).delete()
-        } catch(_:Exception) {withContext(Dispatchers.Main) {status.value="Reply unavailable — check Setup";if(visible)CompanionHaptics.pulse(context,"error")}}
+        } catch(e:Exception) {
+            android.util.Log.e("PuckAppliance", "sendTurn failed", e)
+            withContext(Dispatchers.Main) {status.value="Reply unavailable — check Setup";if(visible)CompanionHaptics.pulse(context,"error")}
+        }
         finally {withContext(Dispatchers.Main){activeTurn=null};store.prefs.edit().putLong("voice_turn_ms",SystemClock.elapsedRealtime()-startedAt).apply();sending=false}
     }
     private fun show(text:String) { update.value=text.take(4000);store.prefs.edit().putString("update",update.value).apply() }

@@ -696,7 +696,14 @@ class Runtime:
                 pass
 
     def send(self, request_id, text, chat_id, reply_instruction="", image_base64="", audio_base64="", video_base64=""):
-        if not self.loop or not self.session or self.session.registered_at is None:
+        if not self.loop:
+            return json.dumps({"ok": False, "error": "Muse runtime inactive"})
+        # If session is currently connecting or registering, wait briefly
+        for _ in range(60):
+            if self.session and self.session.registered_at is not None:
+                break
+            time.sleep(0.1)
+        if not self.session or self.session.registered_at is None:
             return json.dumps({"ok": False, "error": "Muse is reconnecting"})
         session = self.session
         attachments = None

@@ -178,8 +178,10 @@ class MuseRuntime private constructor(private val context: Context) {
         // User must explicitly choose "Forget connection" in Settings to clear.
     }
     fun onPaired() {
-        setupStatus.value = "Muse paired with Muse Launcher. Choose Use Muse to connect."
+        setupStatus.value = "Muse paired! Connecting to Muse…"
         stopPairing()
+        vault.enabled = true
+        reconnect()
     }
     private fun appCommands():Map<String,DeviceAction.OpenApp> {
         val apps=DeviceCapabilities.launchableApps(context)
