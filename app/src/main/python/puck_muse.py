@@ -460,12 +460,17 @@ class AndroidSession(LinkSession):
             self.callbacks.onState("connected", "Muse connected")
             # The official gadget firmware announces presence once after a
             # registered response (then every 24h); websocket ping is separate.
+            # Keep announcing every 15 minutes: a long-lived session otherwise
+            # drops off the VM and the pairing has to be recreated.
             if isinstance(message.get("result"), dict) and message["result"].get("status") == "registered":
                 async def announce():
-                    try:
-                        await self.send({"method": "link.heartbeat"})
-                    except Exception:
-                        self.callbacks.onRequestFailed("Muse presence announcement failed")
+                    while True:
+                        try:
+                            await self.send({"method": "link.heartbeat"})
+                        except Exception:
+                            self.callbacks.onRequestFailed("Muse presence announcement failed")
+                            return
+                        await asyncio.sleep(900)
                 task = asyncio.ensure_future(announce())
                 self._tasks.add(task)
                 task.add_done_callback(self._tasks.discard)
@@ -672,25 +677,48 @@ class Runtime:
         future.add_done_callback(self.notifications.discard)
         return True
 
+    RECONNECT_AFTER_REFRESH_S = 60  # never rotate twice within this window
+
+    async def maybe_refresh(self, credentials, root, max_age=1800):
+        """Rotate the device token pair before it can expire.
+
+        Proactive rotation keeps a session usable hours later, even after the
+        phone slept or the websocket dropped. Tokens the server has already
+        rotated are adopted even if persisting them failed once: the previous
+        refresh token is gone server-side, so keeping it would turn one save
+        hiccup into a permanent "pair again" error.
+        """
+        now = time.time()
+        if now - credentials.get("saved_at", 0) > max_age and now - self.last_refresh >= self.RECONNECT_AFTER_REFRESH_S:
+            self.last_refresh = now
+            try:
+                tokens, refresh_status = await asyncio.to_thread(
+                    refresh_device_token, credentials["refresh_token"], self.identity.device_id, root, credentials.get("sdk_token"))
+                if tokens:
+                    candidate = {**credentials, "access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "saved_at": time.time()}
+                    self.callbacks.saveCredentials(json.dumps(candidate))
+                    return candidate
+                if refresh_status == 401:
+                    # Say so plainly instead of spinning on "Muse VM unavailable".
+                    self.callbacks.onState("blocked", "Muse rejected the stored pairing. Re-pair in Muse Settings to restore it.")
+            except Exception:
+                pass
+        return credentials
+
     async def _run(self, credentials):
         self.loop = asyncio.get_running_loop()
         self.stop_event = asyncio.Event()
+        self.last_refresh = 0.0
         failures = 0
         while not self.closed:
             self.callbacks.onState("connecting", "Connecting to Muse")
             try:
                 root = api_root(credentials.get("api_url_v2"))
+                credentials = await self.maybe_refresh(credentials, root)
                 vms, status = await asyncio.to_thread(fetch_vms_with_status, credentials["access_token"], root)
-                if status == 401 or time.time() - credentials.get("saved_at", 0) > 3600:
-                    try:
-                        tokens, refresh_status = await asyncio.to_thread(refresh_device_token, credentials["refresh_token"], self.identity.device_id, root, credentials.get("sdk_token"))
-                        if tokens:
-                            candidate = {**credentials, "access_token": tokens["access_token"], "refresh_token": tokens["refresh_token"], "saved_at": time.time()}
-                            if self.callbacks.saveCredentials(json.dumps(candidate)):
-                                credentials = candidate
-                                vms, status = await asyncio.to_thread(fetch_vms_with_status, credentials["access_token"], root)
-                    except Exception:
-                        pass
+                if status == 401:
+                    credentials = await self.maybe_refresh(credentials, root, max_age=0)
+                    vms, status = await asyncio.to_thread(fetch_vms_with_status, credentials["access_token"], root)
                 if not vms:
                     raise ConnectionError("Muse VM unavailable")
                 vm = next((v for v in vms if v["is_default"]), vms[0])

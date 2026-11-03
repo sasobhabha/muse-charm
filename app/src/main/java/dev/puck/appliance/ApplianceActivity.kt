@@ -219,13 +219,15 @@ class ApplianceActivity:ComponentActivity() {
                                     }
                                 }
 
+                                // 48dp button with a larger, more visible gear so the
+                                // settings entry point is easy to find and tap on a small screen.
                                 IconButton(
                                     onClick = { engine.cancelAvatarVoice(); speech.stop(); setup = true },
-                                    modifier = Modifier.size(28.dp).graphicsLayer { alpha = 0.28f }
+                                    modifier = Modifier.size(48.dp).graphicsLayer { alpha = 0.6f }
                                 ) {
-                                    Canvas(Modifier.size(16.dp)) {
+                                    Canvas(Modifier.size(26.dp)) {
                                         val center = Offset(size.width/2, size.height/2)
-                                        drawCircle(Color.White, radius = size.minDimension * 0.22f, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5f))
+                                        drawCircle(Color.White, radius = size.minDimension * 0.22f, style = androidx.compose.ui.graphics.drawscope.Stroke(2.5f))
                                         for(angle in 0 until 360 step 60) {
                                             val rad = Math.toRadians(angle.toDouble())
                                             val cos = Math.cos(rad).toFloat()
@@ -236,7 +238,7 @@ class ApplianceActivity:ComponentActivity() {
                                                 Color.White,
                                                 Offset(center.x + cos*r1, center.y + sin*r1),
                                                 Offset(center.x + cos*r2, center.y + sin*r2),
-                                                strokeWidth = 2f
+                                                strokeWidth = 3f
                                             )
                                         }
                                     }
