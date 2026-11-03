@@ -172,6 +172,12 @@ class ApplianceEngine private constructor(val context:Context) {
         scope.launch { while(isActive) {
             if(store.endpoint.isNotBlank())runCatching {sync()}
             withContext(Dispatchers.Main) {if(visible)checkIn()}
+            // Standalone watchdog: once paired, keep the link up without any
+            // user action. reconnect() is a no-op while the Muse thread runs.
+            if(muse.vault.enabled)runCatching {
+                val state=muse.connection.value
+                if(state!=dev.puck.core.ConnectionStatus.MuseConnected && state!=dev.puck.core.ConnectionStatus.Connecting)muse.reconnect()
+            }
             delay(15000)
         } } }
     fun observe(key:Int,down:Boolean,repeat:Int):Boolean {

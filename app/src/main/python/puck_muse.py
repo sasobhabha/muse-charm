@@ -621,18 +621,22 @@ class Runtime:
             self.controller = None
 
     def connect(self, credentials_json):
-        if self.thread and self.thread.is_alive():
-            if not self.closed:
-                return
-            self.thread.join(timeout=20)
-            if self.thread.is_alive():
-                raise ConnectionError("previous Muse session is still stopping")
-        credentials = json.loads(credentials_json)
-        api_root(credentials.get("api_url_v2"))
-        noise_host(credentials.get("noise_host"))
-        self.closed = False
-        self.thread = threading.Thread(target=lambda: asyncio.run(self._run(credentials)), daemon=True, name="puck-muse")
-        self.thread.start()
+        # ViewModel init and the engine watchdog can both call this in the same
+        # instant; without a lock each spawns a session bound to a separate
+        # event loop sharing one stop event, and the VM sees two registrations.
+        with threading.Lock():
+            if self.thread and self.thread.is_alive():
+                if not self.closed:
+                    return
+                self.thread.join(timeout=20)
+                if self.thread.is_alive():
+                    raise ConnectionError("previous Muse session is still stopping")
+            credentials = json.loads(credentials_json)
+            api_root(credentials.get("api_url_v2"))
+            noise_host(credentials.get("noise_host"))
+            self.closed = False
+            self.thread = threading.Thread(target=lambda: asyncio.run(self._run(credentials)), daemon=True, name="puck-muse")
+            self.thread.start()
 
     def command(self, command, params, timeout):
         if not isinstance(params, dict):

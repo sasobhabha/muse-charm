@@ -12,6 +12,10 @@ import kotlinx.coroutines.*
 class ApplianceService:Service() {
     private val scope=CoroutineScope(SupervisorJob()+Dispatchers.IO)
     private var socket:LocalSocket?=null
+    // Doze suspends network access even for foreground services unless the
+    // process holds a wake lock; without one the Muse link would freeze while
+    // the phone idles and look like a lost pairing on wake.
+    private var wakelock:android.os.PowerManager.WakeLock?=null
     private val screenOff=object:android.content.BroadcastReceiver() {
         override fun onReceive(c:android.content.Context,i:Intent) {ApplianceEngine.get(c).interrupt("Screen switched off; nothing sent")}
     }
@@ -25,6 +29,11 @@ class ApplianceService:Service() {
         // The three-argument startForeground exists only from API 29; the two-argument form is the pre-Android-10 path.
         else if(Build.VERSION.SDK_INT>=29)startForeground(42,note,0)
         else startForeground(42,note)
+        getSystemService(android.os.PowerManager::class.java).let {
+            wakelock=it.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK,"muse-launcher:standalone").apply {
+                setReferenceCounted(false);acquire()
+            }
+        }
         registerReceiver(screenOff,android.content.IntentFilter(Intent.ACTION_SCREEN_OFF))
         val engine=ApplianceEngine.get(this)
         scope.launch {while(isActive) {
@@ -64,7 +73,7 @@ class ApplianceService:Service() {
     }
     override fun onStartCommand(intent:Intent?,flags:Int,startId:Int)=START_STICKY
     override fun onBind(intent:Intent?)=null
-    override fun onDestroy() {runCatching {unregisterReceiver(screenOff)};socket?.close();scope.cancel();ApplianceEngine.get(this).interrupt();super.onDestroy()}
+    override fun onDestroy() {wakelock?.release();wakelock=null;runCatching {unregisterReceiver(screenOff)};socket?.close();scope.cancel();ApplianceEngine.get(this).interrupt();super.onDestroy()}
 }
 class ApplianceBoot:android.content.BroadcastReceiver() {
     override fun onReceive(c:android.content.Context,i:Intent) {
